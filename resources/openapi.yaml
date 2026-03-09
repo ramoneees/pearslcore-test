@@ -1,0 +1,398 @@
+openapi: 3.1.1
+info:
+  title: Projects API
+  description: |
+    A production-shaped CRUD API for managing projects.
+    
+    ## Features
+    - Create, list, and retrieve projects
+    - Pagination with limit/offset
+    - Sorting by created_at or name
+    - Filter by status
+    - API versioning via X-API-Version header
+    
+    ## Error Handling
+    All error responses follow a consistent JSON structure with error code, message, and optional details.
+  version: 1.0.0
+  contact:
+    name: API Support
+    
+servers:
+  - url: http://localhost:3000
+    description: Development server
+
+tags:
+  - name: projects
+    description: Project management operations
+
+paths:
+  /projects:
+    get:
+      summary: List all projects
+      description: |
+        Returns a paginated list of projects with optional filtering by status.
+        
+        Default pagination is 20 items per page, sorted by created_at descending.
+      operationId: listProjects
+      tags:
+        - projects
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of items to return (1-100)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          description: Number of items to skip
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: sort
+          in: query
+          description: Field to sort by
+          required: false
+          schema:
+            type: string
+            enum: [created_at, name]
+            default: created_at
+        - name: order
+          in: query
+          description: Sort order
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+        - name: status
+          in: query
+          description: Filter by project status
+          required: false
+          schema:
+            type: string
+            enum: [planned, active, completed, archived]
+        - $ref: '#/components/parameters/X-API-Version'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectList'
+              example:
+                items:
+                  - id: '550e8400-e29b-41d4-a716-446655440001'
+                    name: Website Redesign
+                    status: active
+                    created_at: '2026-03-01T10:00:00Z'
+                limit: 20
+                offset: 0
+                total: 1
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: bad_request
+                  message: Invalid query parameter value
+                  details:
+                    - field: limit
+                      message: must be between 1 and 100
+    post:
+      summary: Create a new project
+      description: |
+        Creates a new project with the given name and optional status.
+        
+        - Name must be 3-120 characters after trimming
+        - Name must be unique (case-insensitive)
+        - Status defaults to 'planned' if not specified
+      operationId: createProject
+      tags:
+        - projects
+      parameters:
+        - $ref: '#/components/parameters/X-API-Version'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProject'
+            examples:
+              minimal:
+                summary: Create with name only
+                value:
+                  name: My New Project
+              with_status:
+                summary: Create with name and status
+                value:
+                  name: My New Project
+                  status: active
+      responses:
+        '201':
+          description: Project created successfully
+          headers:
+            Location:
+              description: URI of the newly created project
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+              example:
+                id: '550e8400-e29b-41d4-a716-446655440010'
+                name: My New Project
+                status: planned
+                created_at: '2026-03-08T12:34:56Z'
+        '400':
+          description: Invalid request body (malformed JSON)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: bad_request
+                  message: Malformed JSON in request body
+                  details:
+                    - field: body
+                      message: must be valid JSON
+        '409':
+          description: Duplicate project name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: conflict
+                  message: A project with this name already exists
+                  details:
+                    - field: name
+                      message: must be unique (case-insensitive)
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: validation_error
+                  message: Request validation failed
+                  details:
+                    - field: name
+                      message: must be between 3 and 120 characters
+
+  /projects/{id}:
+    get:
+      summary: Get a project by ID
+      description: Returns a single project by its unique identifier
+      operationId: getProject
+      tags:
+        - projects
+      parameters:
+        - name: id
+          in: path
+          description: Project UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/X-API-Version'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+              example:
+                id: '550e8400-e29b-41d4-a716-446655440001'
+                name: Website Redesign
+                status: active
+                created_at: '2026-03-01T10:00:00Z'
+        '400':
+          description: Invalid UUID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: bad_request
+                  message: Invalid UUID format
+                  details:
+                    - field: id
+                      message: must be a valid UUID
+        '404':
+          description: Project not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: not_found
+                  message: Project not found
+
+  /openapi.yaml:
+    get:
+      summary: OpenAPI specification
+      description: Returns the OpenAPI 3.1.1 specification for this API
+      operationId: getOpenApi
+      responses:
+        '200':
+          description: OpenAPI YAML specification
+          content:
+            application/x-yaml:
+              schema:
+                type: string
+
+components:
+  parameters:
+    X-API-Version:
+      name: X-API-Version
+      in: header
+      description: API version (currently only version 1 is supported)
+      required: false
+      schema:
+        type: integer
+        enum: [1]
+        default: 1
+
+  schemas:
+    Project:
+      type: object
+      description: A project resource
+      required:
+        - id
+        - name
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier
+          example: '550e8400-e29b-41d4-a716-446655440001'
+        name:
+          type: string
+          description: Project name
+          minLength: 3
+          maxLength: 120
+          example: Website Redesign
+        status:
+          type: string
+          description: Project status
+          enum: [planned, active, completed, archived]
+          example: active
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp in ISO-8601 / RFC 3339 format
+          example: '2026-03-01T10:00:00Z'
+
+    ProjectList:
+      type: object
+      description: Paginated list of projects
+      required:
+        - items
+        - limit
+        - offset
+        - total
+      properties:
+        items:
+          type: array
+          description: List of projects
+          items:
+            $ref: '#/components/schemas/Project'
+        limit:
+          type: integer
+          description: Maximum items returned
+          minimum: 1
+          maximum: 100
+          example: 20
+        offset:
+          type: integer
+          description: Offset into total results
+          minimum: 0
+          example: 0
+        total:
+          type: integer
+          description: Total matching items
+          minimum: 0
+          example: 5
+
+    CreateProject:
+      type: object
+      description: Project creation request
+      required:
+        - name
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          description: Project name (3-120 characters)
+          minLength: 3
+          maxLength: 120
+          example: My New Project
+        status:
+          type: string
+          description: Project status (defaults to 'planned')
+          enum: [planned, active, completed, archived]
+          default: planned
+
+    ErrorDetail:
+      type: object
+      description: Details about a specific validation error
+      properties:
+        field:
+          type: string
+          description: Field that caused the error
+          example: name
+        message:
+          type: string
+          description: Error message
+          example: must be between 3 and 120 characters
+
+    Error:
+      type: object
+      description: Standard error response
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              description: Error code
+              enum:
+                - bad_request
+                - not_found
+                - conflict
+                - validation_error
+                - internal_error
+              example: validation_error
+            message:
+              type: string
+              description: Human-readable error message
+              example: Request validation failed
+            details:
+              type: array
+              description: Additional error details
+              items:
+                $ref: '#/components/schemas/ErrorDetail'
