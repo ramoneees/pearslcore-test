@@ -11,15 +11,10 @@
 
 (def ^:private timestamp-formatter DateTimeFormatter/ISO_INSTANT)
 
-(defn- format-timestamp
-  "Format an Instant to ISO-8601 / RFC 3339 format"
-  [inst]
-  (.format timestamp-formatter inst))
-
 (defn- now-iso8601
   "Get current timestamp in ISO-8601 format"
   []
-  (format-timestamp (Instant/now)))
+  (.format timestamp-formatter (Instant/now)))
 
 (defn- generate-uuid
   "Generate a random UUID string"
@@ -30,10 +25,7 @@
 (defn- row->project
   "Transform a database row to project map"
   [row]
-  {:id (:id row)
-   :name (:name row)
-   :status (:status row)
-   :created_at (:created_at row)})
+  (select-keys row [:id :name :status :created_at]))
 
 ;; SQL builders
 (defn- build-where-clause

@@ -1,8 +1,7 @@
 (ns pearslcore-test.db.migrations
   "Database migrations using Migratus"
   (:require [migratus.core :as migratus]
-            [clojure.tools.logging :as log]
-            [next.jdbc :as jdbc]))
+            [clojure.tools.logging :as log]))
 
 (defn- migratus-config
   "Build Migratus configuration from datasource"
@@ -28,10 +27,3 @@
   [ds]
   (log/info "Resetting database...")
   (migratus/reset (migratus-config ds)))
-
-(defn create-migration-table!
-  "Create the migration table if it doesn't exist"
-  [ds]
-  (jdbc/execute! ds ["CREATE TABLE IF NOT EXISTS schema_migrations (
-                       name VARCHAR(255) PRIMARY KEY
-                     )"]))

@@ -1,7 +1,6 @@
 (ns pearslcore-test.db.datasource
   "Database connection management with HikariCP"
   (:require [clojure.tools.logging :as log]
-            [next.jdbc :as jdbc]
             [next.jdbc.connection :as connection])
   (:import [com.zaxxer.hikari HikariDataSource]))
 
@@ -24,8 +23,3 @@
   [^HikariDataSource ds]
   (when ds
     (.close ds)))
-
-(defn get-connection
-  "Get a connection from the datasource"
-  [ds]
-  (jdbc/get-connection ds))

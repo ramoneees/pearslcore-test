@@ -73,7 +73,3 @@
 (defn reset []
   (stop)
   (start))
-
-(defn -main [& _]
-  (start)
-  (deref (promise)))

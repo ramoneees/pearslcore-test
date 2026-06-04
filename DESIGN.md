@@ -230,6 +230,39 @@ All errors follow a consistent JSON structure:
 | HikariCP | Connection pooling | Production-grade pooling |
 | Migratus | Migrations | Simple SQL-based migrations |
 
+### Project Layout
+
+```
+src/pearslcore_test/
+  config.clj          configuration defaults and EDN file loading
+  system.clj          Integrant component graph + start/stop/reset
+  handler.clj         Reitit router, middleware chain, route definitions
+  handler/projects.clj endpoint handlers and error-response helpers
+  schema.clj          Malli schemas (request, response, domain validation)
+  middleware.clj      wrap-version, wrap-error, wrap-logging, wrap-json-parse-error
+  main.clj            -main entry point
+  db/
+    datasource.clj    HikariCP pool creation/teardown
+    migrations.clj    Migratus migration runner
+    repository.clj    SQL queries (list/create/get)
+
+dev/user.clj          REPL helpers (integrant.repl go/halt/reset)
+migrations/           Migratus SQL files (up + down)
+resources/openapi.yaml  OpenAPI 3.1.1 spec, served at GET /openapi.yaml
+test/pearslcore_test/
+  handler/projects_test.clj  integration tests
+terraform/            Snowflake module (main.tf, variables.tf, outputs.tf)
+```
+
+### Query Parameter Coercion
+
+**Decision**: Handlers consume coerced parameters from `[:parameters :query]` and `[:parameters :path]`, not raw Ring params.
+
+**Rationale**:
+- Reitit's `coerce-request-middleware` (configured globally with `reitit.coercion.malli`) validates and coerces params before the handler runs. By the time a handler is invoked, `[:parameters :query :limit]` is already an integer and invalid values have already returned a 400.
+- Reading from `query-params` (raw strings) and then re-parsing would duplicate logic already declared in the route `:parameters` schema and create two sources of truth.
+- This means handlers can destructure coerced params directly and trust their types.
+
 ### ID Strategy
 
 **Decision**: Server-generated UUID strings.
@@ -316,24 +349,44 @@ terraform/
 
 ### How AI Output Was Verified
 
-1. **Tests Run**: All integration tests pass with temporary SQLite databases
-2. **Manual Checks**:
-   - Tested each endpoint with curl commands
-   - Verified error responses match specification
-   - Checked pagination, sorting, and filtering work correctly
-   - Validated name uniqueness enforcement
-3. **Code Review**: Reviewed all generated code for:
-   - Idiomatic Clojure patterns
-   - Proper error handling
-   - SQL injection prevention
-   - Resource cleanup
+**Test suite**: All 14 integration tests run against a temporary SQLite database (per-test
+isolation via `with-test-database`). Tests cover happy paths, edge cases, and all documented
+error codes. Tests are the first line of verification — if a handler, schema, or middleware
+change breaks contract, a test fails.
+
+**Structured code review**: A systematic review pass identified and fixed the following
+AI-generated issues before submission:
+
+| Issue | Category | Fix |
+|-------|----------|-----|
+| `main/-main` returned immediately after starting Jetty (uberjar would exit) | Bug | Added `(deref (promise))` |
+| `list-projects` read raw `query-params` instead of reitit coerced `[:parameters :query]` | Bug | Rewrote handler to use coerced params |
+| `get-project` read raw `path-params` instead of `[:parameters :path]` | Bug | Updated to coerced path |
+| Route `:responses` had only descriptions — Malli response validation never ran | Bug | Added `:body` schemas to all primary 2xx routes |
+| `iso-8601-timestamp` regex rejected real `Instant/now` output (fractional seconds) | Bug | Updated regex to allow optional fractional seconds |
+| `make-request` test helper overwrote entire `:headers` map | Bug | Fixed to `(update :headers merge headers)` |
+| `validate-create-request` had confusing outer `errors` binding before `cond` | Readability | Moved seed inside `:else` branch |
+| `create-migration-table!` created a table that conflicted with Migratus internals | Dead code | Removed |
+| `get-connection`, `coerce-and-validate`, `body-coercer`, `query-coercer` never called | Dead code | Removed |
+| Duplicate `-main` in `system.clj`; unused `core.clj` stub | Dead code | Removed |
+| `wrap-logging` emitted a redundant pre-request log line | Readability | Removed |
+| `terraform/README.md` listed resources not present in `main.tf` | Doc error | Corrected |
+
+**Manual curl verification**: Each endpoint was exercised manually after implementation:
+- `GET /projects` — pagination envelope, seed data present
+- `POST /projects` — `201` + `Location` header
+- Duplicate name — `409` with stable payload
+- Invalid UUID — `400`
+- `GET /projects?status=active` — filter + total semantics
 
 ### AI Assistance Areas
 
-- Project structure and organization
-- Error response formatting
-- Documentation structure
-- Terraform template 
+- Initial project scaffolding (system lifecycle, middleware chain, handler structure)
+- Malli schema definitions and reitit route declarations
+- SQL query patterns and repository layer
+- OpenAPI spec structure
+- Terraform module boilerplate
+- Documentation drafts (README, DESIGN.md, doc/intro.md)
 ---
 
 ## 8. Run & Test

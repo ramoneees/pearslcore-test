@@ -51,7 +51,7 @@
         request (cond-> (mock/request method uri)
                   body (mock/json-body body)
                   params (mock/query-string params)
-                  headers (#(merge % {:headers headers})))
+                  headers (update :headers merge headers))
         response (handler request)]
     response))
 

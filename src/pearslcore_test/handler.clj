@@ -8,6 +8,7 @@
             [reitit.ring.middleware.parameters :as parameters-middleware]
             [pearslcore-test.handler.projects :as projects-handler]
             [pearslcore-test.middleware :as middleware]
+            [pearslcore-test.schema :as schema]
             [muuntaja.core :as m]))
 
 ;; Muuntaja configuration
@@ -40,13 +41,15 @@
                                      [:sort {:optional true} [:enum "created_at" "name"]]
                                      [:order {:optional true} [:enum "asc" "desc"]]
                                      [:status {:optional true} [:enum "planned" "active" "completed" "archived"]]]}
-                :responses {200 {:description "Successful response"}
+                :responses {200 {:description "Successful response"
+                                 :body schema/project-list-response-schema}
                             400 {:description "Invalid query parameters"}}
                 :handler (partial projects-handler/list-projects datasource)}
 
           :post {:summary "Create a new project"
                  :description "Creates a new project with the given name and optional status"
-                 :responses {201 {:description "Project created"}
+                 :responses {201 {:description "Project created"
+                                  :body schema/project-response-schema}
                              400 {:description "Invalid request body"}
                              409 {:description "Duplicate project name"}
                              422 {:description "Validation error"}}
@@ -55,7 +58,8 @@
      ["/:id" {:get {:summary "Get a project by ID"
                     :description "Returns a single project by its ID"
                     :parameters {:path [:map [:id string?]]}
-                    :responses {200 {:description "Successful response"}
+                    :responses {200 {:description "Successful response"
+                                     :body schema/project-response-schema}
                                 400 {:description "Invalid UUID"}
                                 404 {:description "Project not found"}}
                     :handler (partial projects-handler/get-project datasource)}}]]]

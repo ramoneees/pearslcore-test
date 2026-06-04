@@ -55,35 +55,15 @@
 ;; Project handlers
 (defn list-projects
   "Handle GET /projects request"
-  [ds {:keys [query-params]}]
+  [ds request]
   (try
-    (let [qp (or query-params {})
-          qv (fn [k] (or (get qp k) (get qp (name k))))
-          parse-int (fn [v]
-                      (cond
-                        (nil? v) nil
-                        (integer? v) v
-                        :else (Integer/parseInt v)))
-          limit (if-let [l (parse-int (qv :limit))]
-                  (min 100 (max 1 l))
-                  20)
-          offset (if-let [o (parse-int (qv :offset))]
-                   (max 0 o)
-                   0)
-          sort (or (qv :sort) "created_at")
-          order (or (qv :order) "desc")
-          status (when-let [s (qv :status)]
-                   (keyword s))
-          result (repo/list-projects ds {:limit limit
-                                         :offset offset
-                                         :sort sort
-                                         :order order
-                                         :status status})]
+    (let [{:keys [limit offset sort order status]} (get-in request [:parameters :query])
+          result (repo/list-projects ds {:limit (or limit 20)
+                                         :offset (or offset 0)
+                                         :sort (or sort "created_at")
+                                         :order (or order "desc")
+                                         :status (some-> status keyword)})]
       (http/ok result))
-    (catch NumberFormatException _
-      (bad-request-error "Invalid query parameter value"
-                         [{:field "query parameter"
-                           :message "must be an integer"}]))
     (catch Exception e
       (log/error e "Error listing projects")
       (error-response 500
@@ -94,58 +74,53 @@
 (defn- validate-create-request
   "Validate a project creation request. Returns {:keys [valid? errors data]}"
   [body]
-  (let [errors []]
-    ;; Check required fields
-    (cond
-      (nil? body)
-      {:valid? false
-       :errors [{:field "body" :message "Request body is required"}]}
+  (cond
+    (nil? body)
+    {:valid? false
+     :errors [{:field "body" :message "Request body is required"}]}
 
-      (not (map? body))
-      {:valid? false
-       :errors [{:field "body" :message "Request body must be a JSON object"}]}
+    (not (map? body))
+    {:valid? false
+     :errors [{:field "body" :message "Request body must be a JSON object"}]}
 
-      (not (contains? body :name))
-      {:valid? false
-       :errors [{:field "name" :message "is required"}]}
+    (not (contains? body :name))
+    {:valid? false
+     :errors [{:field "name" :message "is required"}]}
 
-      :else
-      ;; Validate name
-      (let [name-validation (schema/validate-project-name (:name body))
-            errors (if (:valid? name-validation)
-                     errors
-                     (conj errors {:field "name"
-                                   :message (:error name-validation)}))
-            ;; Validate status if provided
-            errors (if (and (contains? body :status)
-                            (not (#{:planned :active :completed :archived "planned" "active" "completed" "archived"}
-                                  (:status body))))
-                     (conj errors {:field "status"
-                                   :message "must be one of: planned, active, completed, archived"})
-                     errors)
-            ;; Check for forbidden fields
-            errors (if (contains? body :id)
-                     (conj errors {:field "id"
-                                   :message "cannot be specified"})
-                     errors)
-            errors (if (contains? body :created_at)
-                     (conj errors {:field "created_at"
-                                   :message "cannot be specified"})
-                     errors)
-            ;; Check for unknown fields
-            allowed-fields #{:name :status}
-            unknown-fields (remove allowed-fields (keys body))
-            errors (if (seq unknown-fields)
-                     (conj errors {:field (-> unknown-fields first name)
-                                   :message "is not allowed"})
-                     errors)]
+    :else
+    (let [errors []
+          name-validation (schema/validate-project-name (:name body))
+          errors (if (:valid? name-validation)
+                   errors
+                   (conj errors {:field "name"
+                                 :message (:error name-validation)}))
+          errors (if (and (contains? body :status)
+                          (not (#{:planned :active :completed :archived "planned" "active" "completed" "archived"}
+                                (:status body))))
+                   (conj errors {:field "status"
+                                 :message "must be one of: planned, active, completed, archived"})
+                   errors)
+          errors (if (contains? body :id)
+                   (conj errors {:field "id"
+                                 :message "cannot be specified"})
+                   errors)
+          errors (if (contains? body :created_at)
+                   (conj errors {:field "created_at"
+                                 :message "cannot be specified"})
+                   errors)
+          allowed-fields #{:name :status}
+          unknown-fields (remove allowed-fields (keys body))
+          errors (if (seq unknown-fields)
+                   (conj errors {:field (-> unknown-fields first name)
+                                 :message "is not allowed"})
+                   errors)]
         (if (seq errors)
           {:valid? false :errors errors}
           {:valid? true
            :data {:name (str/trim (:name body))
                   :status (or (when-let [s (:status body)]
                                 (if (keyword? s) s (keyword s)))
-                              :planned)}})))))
+                              :planned)}}))))
 
 (defn create-project
   "Handle POST /projects request"
@@ -183,10 +158,9 @@
 
 (defn get-project
   "Handle GET /projects/:id request"
-  [ds {:keys [path-params]}]
+  [ds request]
   (try
-    (let [id (:id path-params)]
-      ;; Validate UUID format
+    (let [id (get-in request [:parameters :path :id])]
       (if-not (try
                 (UUID/fromString id)
                 true
@@ -194,7 +168,6 @@
         (bad-request-error "Invalid UUID format"
                            [{:field "id"
                              :message "must be a valid UUID"}])
-        ;; Look up project
         (if-let [project (repo/get-project-by-id ds id)]
           (http/ok project)
           (not-found-error "Project not found"))))

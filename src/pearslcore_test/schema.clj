@@ -1,9 +1,6 @@
 (ns pearslcore-test.schema
   "Malli schemas for request/response validation and coercion"
-  (:require [malli.core :as m]
-            [malli.transform :as mt]
-            [malli.error :as me]
-            [clojure.string :as str]))
+  (:require [clojure.string :as str]))
 
 (def ^:private trimmed-name-regex
   "Regex for valid project name after trimming - allows letters, numbers, spaces, and . _ - ' / ( )"
@@ -40,12 +37,12 @@
         :error/message "must be a valid UUID"}
    #"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"])
 
-;; ISO-8601 timestamp
+;; ISO-8601 timestamp — optional fractional seconds to match Java's ISO_INSTANT formatter
 (def iso-8601-timestamp
   "ISO-8601 / RFC 3339 timestamp"
   [:re {:description "ISO-8601 timestamp"
         :error/message "must be a valid ISO-8601 timestamp"}
-   #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"])
+   #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$"])
 
 ;; Project response schema
 (def project-response-schema
@@ -118,21 +115,6 @@
                        :description "List of error details"}
              [:vector error-detail-schema]]]]])
 
-;; Coercer for request bodies
-(def body-coercer
-  "Coercer for JSON request bodies"
-  (mt/transformer
-   mt/string-transformer
-   mt/json-transformer
-   {:name :strip-extra-keys}))
-
-;; Query param coercer
-(def query-coercer
-  "Coercer for query parameters"
-  (mt/transformer
-   mt/string-transformer
-   {:name :strip-extra-keys}))
-
 ;; Validation helpers
 (defn validate-project-name
   "Validate project name and return normalized form or error details"
@@ -157,13 +139,3 @@
       :else
       {:valid? true :value trimmed})))
 
-(defn coerce-and-validate
-  "Coerce and validate data against schema. Returns {:keys [data errors]} "
-  [schema data transformer]
-  (let [coerced (m/decode schema data transformer)
-        result (m/explain schema coerced)]
-    (if result
-      {:data coerced
-       :errors (me/humanize result)}
-      {:data coerced
-       :errors nil})))

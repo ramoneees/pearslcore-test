@@ -70,19 +70,16 @@
   "Middleware to log HTTP requests"
   [handler]
   (fn [request]
-    (let [start-time (System/currentTimeMillis)
-          method (:request-method request)
-          uri (:uri request)
-          query-string (:query-string request)
-          uri-with-query (if query-string
-                           (str uri "?" query-string)
-                           uri)]
-      (log/info (str (-> method name str/upper-case) " " uri-with-query))
-      (let [response (handler request)
-            elapsed (- (System/currentTimeMillis) start-time)]
-        (log/info (str (-> method name str/upper-case) " " uri-with-query
-                       " - " (:status response) " - " elapsed "ms"))
-        response))))
+    (let [start-time     (System/currentTimeMillis)
+          method         (:request-method request)
+          uri            (:uri request)
+          query-string   (:query-string request)
+          uri-with-query (if query-string (str uri "?" query-string) uri)
+          response       (handler request)
+          elapsed        (- (System/currentTimeMillis) start-time)]
+      (log/info (str (-> method name str/upper-case) " " uri-with-query
+                     " - " (:status response) " - " elapsed "ms"))
+      response)))
 
 ;; JSON parsing middleware (for malformed JSON)
 (defn wrap-json-parse-error

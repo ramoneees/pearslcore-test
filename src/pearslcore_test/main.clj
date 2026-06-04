@@ -7,4 +7,5 @@
   "Start the Projects API server"
   [& _]
   (println "Starting Projects API...")
-  (system/start))
+  (system/start)
+  (deref (promise)))

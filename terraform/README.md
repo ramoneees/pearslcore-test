@@ -35,9 +35,7 @@ module "projects" {
 | snowflake_database.this | resource |
 | snowflake_schema.this | resource |
 | snowflake_table.projects | resource |
-| snowflake_table_constraint.projects_name_unique | resource |
 | snowflake_view.projects_by_status | resource |
-| snowflake_grant_privileges_to_account_role.database_ownership | resource |
 
 ## Inputs
 
