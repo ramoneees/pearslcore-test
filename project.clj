@@ -27,6 +27,7 @@
                  [cheshire "5.13.0"]]
   :main ^:skip-aot pearslcore-test.main
   :target-path "target/%s"
+  :resource-paths ["resources" "migrations"]
   :profiles {:uberjar {:aot :all}
              :dev {:dependencies [[integrant/repl "0.3.3"]
                                  [ring/ring-mock "0.4.0"]]

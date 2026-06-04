@@ -1,11 +1,13 @@
 (ns pearslcore-test.handler
   "HTTP handlers and routes"
   (:require [ring.util.response :as response]
+            [clojure.java.io :as io]
             [reitit.ring :as ring]
             [reitit.ring.coercion :as coercion]
             [reitit.coercion.malli :as rcm]
             [reitit.ring.middleware.muuntaja :as muuntaja-middleware]
             [reitit.ring.middleware.parameters :as parameters-middleware]
+            [reitit.swagger-ui :as swagger-ui]
             [pearslcore-test.handler.projects :as projects-handler]
             [pearslcore-test.middleware :as middleware]
             [pearslcore-test.schema :as schema]
@@ -26,8 +28,15 @@
   (ring/router
    [["/openapi.yaml"
      {:get {:handler (fn [_]
-                       (-> (response/resource-response "openapi.yaml" {:root "resources"})
+                       (-> (response/response (-> "openapi.yaml" io/resource io/input-stream))
                            (response/content-type "application/x-yaml")))}}]
+
+    ["/swagger*"
+     {:no-doc true
+      :get (swagger-ui/create-swagger-ui-handler
+            {:path "/swagger"
+             :url "/openapi.yaml"
+             :config {:validatorUrl nil}})}]
 
     ["/projects"
      {:middleware [[middleware/wrap-version config]
