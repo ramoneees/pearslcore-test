@@ -6,29 +6,45 @@ This change log follows the conventions of [keepachangelog.com](https://keepacha
 ## [Unreleased]
 
 ### Changed
-- `list-projects` handler now reads reitit coerced query params from `[:parameters :query]`
-  instead of re-parsing raw `query-params` with manual integer conversion.
-- `get-project` handler reads path param from `[:parameters :path :id]` to match reitit convention.
-- `validate-create-request` — moved accumulator seed inside `:else` branch; consistent `let` indentation.
-- `wrap-logging` no longer emits a redundant pre-request log line; only logs on response.
-- `row->project` uses `select-keys` instead of manual field-by-field reconstruction.
-- `now-iso8601` inlined `format-timestamp` wrapper into a single call.
+- Route `:parameters` now reference named schemas in `pearslcore-test.schema`
+  (`list-projects-params-schema`, `create-project-request-schema`) instead of inlining
+  the map shape in `handler.clj`. Single source of truth for OpenAPI, validation, and tests.
+- Body coercion now goes through a custom `malli-coercion` that:
+  - overrides reitit's default `:compile` step (which rewrites schemas and was masking
+    the body schema's `:closed true` setting), and
+  - swaps the body transformer for a no-op so extra keys survive to the validate step
+    and are caught by the closed-map check.
+- Coercion failures are now mapped to our error envelope by a custom
+  `coerce-exceptions` middleware: body coercion → `422 validation_error`,
+  query/path coercion → `400 bad_request`. The middleware reports *every* failing
+  field via a Malli humanized-error walker, not just the first one.
+- `repository/create-project!` no longer performs an upfront `get-project-by-name`
+  lookup. The unique index on `lower(trim(name))` is the single source of truth for
+  duplicate detection; a `UNIQUE constraint failed` `SQLException` is translated into
+  the `:duplicate_name` ex-info. Removes the previous TOCTOU window.
+- `list-projects` handler passes the coerced string status straight through; the
+  detour through `keyword` is gone.
 
 ### Removed
-- `core.clj` — unused Leiningen project stub.
-- `datasource/get-connection` — unused function; callers pass the datasource directly to next.jdbc.
-- `migrations/create-migration-table!` — never called; conflicted with Migratus's own tracking table.
-- `system/-main` — dead duplicate of the entry point in `main.clj`.
-- `schema/body-coercer`, `schema/query-coercer`, `schema/coerce-and-validate` — defined but never used.
-- Unused `malli.transform` and `malli.error` requires from `schema.clj`.
-- Unused `next.jdbc` require from `migrations.clj` and `datasource.clj`.
+- `handler.projects/validate-create-request` — body validation, closedness, forbidden
+  fields, and unknown fields are all handled by the Malli schema via reitit coercion.
+- `schema/validate-project-name` — duplicated rules already encoded in
+  `project-name-schema`; the schema is now the single rule definition.
+- `schema/pagination-params`, `sorting-params`, `status-filter-params` — flattened
+  into `list-projects-params-schema` (avoids depending on `:merge` registry support).
+- `repository/get-project-by-name` and its `declare` — no longer needed once the
+  upfront duplicate check was removed.
+- `test/pearslcore_test/core_test.clj` — trivial `(is (= 1 1))` stub.
 
 ### Fixed
-- `main/-main` now calls `(deref (promise))` so the process does not exit immediately after
-  starting Jetty when run as an uberjar.
-- `make-request` test helper now merges headers with `(update :headers merge headers)` instead
-  of overwriting the entire `:headers` key, which previously dropped `Content-Type` when
-  both a body and custom headers were supplied.
+- **Latent migration bug**: `migrations/001-create_projects_table.up.sql` contained
+  three `;`-separated DDL statements (table + two indexes), but Migratus passes the
+  file as a single statement and the SQLite JDBC driver only executes the first one.
+  As a result, **`idx_projects_name_unique` and `idx_projects_status_created_at`
+  were never being created**. The previous upfront `get-project-by-name` lookup
+  was masking the missing unique index at the application layer. Fixed by adding
+  Migratus `--;;` separators in both `up` and `down` migration files. Detected by
+  duplicate-name tests failing after the upfront lookup was removed.
 
 ## [0.1.0] - 2026-06-04
 

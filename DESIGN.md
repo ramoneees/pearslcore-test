@@ -263,6 +263,36 @@ terraform/            Snowflake module (main.tf, variables.tf, outputs.tf)
 - Reading from `query-params` (raw strings) and then re-parsing would duplicate logic already declared in the route `:parameters` schema and create two sources of truth.
 - This means handlers can destructure coerced params directly and trust their types.
 
+### Body Coercion and Closed-Schema Enforcement
+
+**Decision**: Use a custom `malli-coercion` (in `handler.clj`) that overrides reitit's
+default `:compile` step and substitutes a no-op transformer for body decoding.
+
+**Rationale**:
+- The request body schema `create-project-request-schema` is `:closed true`, so unknown
+  or forbidden keys (`id`, `created_at`, anything else) must be rejected at the boundary.
+- Reitit's default malli coercion re-compiles schemas (collapsing the `:closed` flag)
+  and uses a JSON transformer whose map decoder can strip extras before validation
+  runs. Either of those silently turns `:closed true` into a no-op.
+- The override leaves each schema's `:closed` setting intact and ensures the decode
+  step is a no-op for body parameters, so extras survive to the closed-map validation
+  and trigger a coercion failure.
+
+**Trade-off**: We are explicit about a behavior reitit normally hides; this is a small
+amount of coercion code in exchange for not having to reimplement closed-map checks
+inside each handler.
+
+### Coercion Error Mapping
+
+**Decision**: A custom `coerce-exceptions` middleware translates Reitit/Malli coercion
+failures into our error envelope.
+
+**Mapping**:
+- Body failures (`:in` contains `:body-params`) → `422 validation_error`
+- Query/path failures → `400 bad_request`
+- Details are produced by walking Malli's `humanized` map, so *every* failing field is
+  reported (not just the first one).
+
 ### ID Strategy
 
 **Decision**: Server-generated UUID strings.
@@ -378,6 +408,28 @@ AI-generated issues before submission:
 - Duplicate name — `409` with stable payload
 - Invalid UUID — `400`
 - `GET /projects?status=active` — filter + total semantics
+
+### Second review pass
+
+A scoring-rubric-driven review pass tightened the implementation further and
+**uncovered a latent migration bug** that the first pass had not detected:
+
+| Issue | Category | Fix |
+|-------|----------|-----|
+| Route `:parameters` inlined the query-map shape, duplicating `schema/list-projects-params-schema` | Quality | Routes now reference the named schemas — single source of truth |
+| Closed body schema (`create-project-request-schema`) was effectively ignored — Reitit's default `:compile`/transformer was stripping extra keys before the closed-map check fired | Bug | Custom `malli-coercion` overrides `:compile` to identity and substitutes a no-op body transformer so extras survive to validation |
+| Coercion failures returned the framework's default 400; unknown body fields needed to be 422 | Bug | Custom `coerce-exceptions` middleware: body → 422 `validation_error`, query/path → 400 `bad_request` |
+| `validate-create-request` only reported the first unknown field | Bug | New `humanized->details` walker reports every failing field via Malli's humanized error map |
+| `repository/create-project!` did a read-then-insert duplicate check — TOCTOU race window between the lookup and the insert | Bug | Dropped the upfront lookup; the unique index + `SQLException` catch is the single source of truth |
+| Status-check predicate in `validate-create-request` accepted both keywords and strings — body keys are always strings after JSON decode, so the keyword half was dead | Dead code | `validate-create-request` removed entirely; closed Malli schema covers the check |
+| `schema/validate-project-name` duplicated the rules already encoded in `project-name-schema` | Dead code | Removed — the Malli schema is the only rule definition |
+| `schema/pagination-params`, `sorting-params`, `status-filter-params` were only used by `:merge` into the list-params schema | Dead code | Flattened into `list-projects-params-schema`; drops dependency on `:merge` registry support |
+| `test/pearslcore_test/core_test.clj` was a trivial `(is (= 1 1))` stub | Dead code | Removed |
+| **`migrations/001-create_projects_table.up.sql` contained three `;`-separated DDL statements, but Migratus passes the file as a single statement and the SQLite JDBC driver only executes the first one — the unique index and the status index were never being created. The upfront app-level duplicate check was masking the missing constraint.** | **Latent bug** | Added Migratus `--;;` separators in both `up` and `down` migrations. Detected by the duplicate-name test failing after the upfront lookup was removed |
+
+**Verification after the second pass**: `lein test` → 13 tests, 43 assertions,
+0 failures, 0 errors. The duplicate-name test now genuinely exercises the DB
+constraint rather than being intercepted by an app-level lookup.
 
 ### AI Assistance Areas
 
